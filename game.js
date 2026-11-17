@@ -89,6 +89,8 @@ const POWERUP_DROP_CHANCE = 0.15;
 const POWERUP_TTL   = 10;   // segundos en pantalla antes de desaparecer
 const BOOST_DURATION = 5;   // segundos de efecto
 const BOOST_THRUST   = 520; // empuje duplicado (base: 260)
+const TRIPLE_DURATION = 3;  // segundos de efecto
+const TRIPLE_SPREAD   = 10 * Math.PI / 180; // abanico: ±10° respecto a la nariz
 
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
@@ -259,6 +261,7 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.speedBoost    = 0;
+    this.tripleShot    = 0;
     this.dead          = false;
   }
 
@@ -267,6 +270,7 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedBoost    > 0) this.speedBoost    -= dt;
+    if (this.tripleShot    > 0) this.tripleShot    -= dt;
 
     const ROT    = 3.5;   // rad/s
     const THRUST = this.speedBoost > 0 ? BOOST_THRUST : 260; // px/s²
@@ -293,6 +297,10 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
+    if (this.tripleShot > 0) {
+      return [-TRIPLE_SPREAD, 0, TRIPLE_SPREAD]
+        .map(offset => new Bullet(ox, oy, this.angle + offset));
+    }
     return [new Bullet(ox, oy, this.angle)];
   }
 
@@ -380,6 +388,8 @@ class PowerUp {
   constructor(x, y) {
     this.x = x;
     this.y = y;
+    // Efecto aleatorio al recogerlo: boost de velocidad o triple disparo
+    this.kind = Math.random() < 0.5 ? 'speed' : 'triple';
     this.radius = 10;
     this.ttl  = POWERUP_TTL;
     this.dead = false;
@@ -390,22 +400,31 @@ class PowerUp {
     if (this.ttl <= 0) this.dead = true;
   }
 
-  // Doble chevron amarillo; parpadea justo antes de expirar
+  // Chevron amarillo (velocidad) o tres puntos cian (triple); parpadea antes de expirar
   draw() {
     if (this.ttl < 2 && Math.floor(this.ttl * 8) % 2 === 0) return;
 
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.strokeStyle = '#ffd400';
-    ctx.lineWidth   = 2;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
-    for (const offset of [-5, 3]) {
-      ctx.beginPath();
-      ctx.moveTo(offset - 3, -6);
-      ctx.lineTo(offset + 3, 0);
-      ctx.lineTo(offset - 3, 6);
-      ctx.stroke();
+    if (this.kind === 'speed') {
+      ctx.strokeStyle = '#ffd400';
+      ctx.lineWidth   = 2;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      for (const offset of [-5, 3]) {
+        ctx.beginPath();
+        ctx.moveTo(offset - 3, -6);
+        ctx.lineTo(offset + 3, 0);
+        ctx.lineTo(offset - 3, 6);
+        ctx.stroke();
+      }
+    } else {
+      ctx.fillStyle = '#00e5ff';
+      for (const dx of [-6, 0, 6]) {
+        ctx.beginPath();
+        ctx.arc(dx, 0, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -529,7 +548,8 @@ function update(dt) {
   for (const u of powerups) {
     if (dist(ship, u) < ship.radius + u.radius) {
       u.dead = true;
-      ship.speedBoost = BOOST_DURATION;
+      if (u.kind === 'triple') ship.tripleShot = TRIPLE_DURATION;
+      else ship.speedBoost = BOOST_DURATION;
     }
   }
 
@@ -607,6 +627,13 @@ function drawHUD() {
     ctx.fillStyle    = '#ffd400';
     ctx.font         = 'bold 15px monospace';
     ctx.fillText(`VELOCIDAD ${ship.speedBoost.toFixed(1)}s`, 14, H - 16);
+  }
+
+  if (ship.tripleShot > 0) {
+    ctx.textAlign    = 'left';
+    ctx.fillStyle    = '#00e5ff';
+    ctx.font         = 'bold 15px monospace';
+    ctx.fillText(`TRIPLE ${ship.tripleShot.toFixed(1)}s`, 14, H - 38);
   }
 
   ctx.textAlign  = 'right';
