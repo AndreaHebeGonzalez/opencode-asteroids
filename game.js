@@ -29,6 +29,61 @@ const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
+// ── Skins de la nave ──────────────────────────────────────────────────────────
+// Cada skin es solo datos: silueta (vértices) + colores. El dibujado es único
+// y recorre los vértices; añadir un skin no requiere tocar Ship.draw().
+// El radio de colisión sigue siendo 12: las siluetas deben caber en ~±26 x, ±14 y.
+const SKINS = [
+  {
+    id: 'classic', name: 'CLASICA',
+    color: '#fff', flame: 'rgba(255, 130, 0, 0.85)',
+    verts: [[20, 0], [-12, -9], [-7, 0], [-12, 9]],
+  },
+  {
+    id: 'dart', name: 'DART',
+    color: '#9be7ff', flame: 'rgba(120, 200, 255, 0.9)',
+    verts: [[26, 0], [-4, -8], [-16, -3], [-16, 3], [-4, 8]],
+  },
+  {
+    id: 'delta', name: 'DELTA',
+    color: '#ff7a3c', flame: 'rgba(255, 240, 180, 0.9)',
+    verts: [[18, 0], [-14, -14], [-14, 14]],
+  },
+  {
+    id: 'mantis', name: 'MANTIS',
+    color: '#7dff9e', flame: 'rgba(130, 255, 160, 0.85)',
+    verts: [[16, 0], [-4, -6], [-16, -10], [-12, -2], [-12, 2], [-16, 10], [-4, 6]],
+  },
+];
+
+const SKIN_STORAGE_KEY = 'asteroids-skin';
+let skinIndex = 0;
+
+const currentSkin = () => SKINS[skinIndex];
+
+function cycleSkin() {
+  skinIndex = (skinIndex + 1) % SKINS.length;
+  saveSkin();
+}
+
+function loadSkin() {
+  try {
+    const stored = parseInt(localStorage.getItem(SKIN_STORAGE_KEY), 10);
+    if (Number.isInteger(stored) && stored >= 0 && stored < SKINS.length)
+      skinIndex = stored;
+  } catch {
+    // localStorage puede no estar disponible (modo privado); se usa el skin 0
+  }
+}
+
+function saveSkin() {
+  try {
+    localStorage.setItem(SKIN_STORAGE_KEY, String(skinIndex));
+  } catch {
+    // Sin persistencia disponible: el skin solo dura la sesión
+  }
+}
+
 // ── Power-up Velocidad ────────────────────────────────────────────────────────
 const POWERUP_DROP_CHANCE = 0.15;
 const POWERUP_TTL   = 10;   // segundos en pantalla antes de desaparecer
@@ -249,28 +304,30 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = '#fff';
+    ctx.strokeStyle = currentSkin().color;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    // Silueta clásica: triángulo con muesca trasera
+    // Silueta definida por el skin activo
+    const skin = currentSkin();
+    const tailX = Math.min(...skin.verts.map(v => v[0]));
     ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
+    ctx.moveTo(skin.verts[0][0], skin.verts[0][1]);
+    for (let i = 1; i < skin.verts.length; i++)
+      ctx.lineTo(skin.verts[i][0], skin.verts[i][1]);
     ctx.closePath();
     ctx.stroke();
 
-    // Llama del propulsor (amarilla mientras dure el boost de velocidad)
+    // Llama del propulsor (amarilla mientras dure el boost de velocidad),
+    // anclada a la cola del polígono del skin
     if (this.thrusting && Math.random() > 0.35) {
       ctx.beginPath();
-      ctx.moveTo(-8, -4);
-      ctx.lineTo(-8 - rand(6, 14), 0);
-      ctx.lineTo(-8,  4);
+      ctx.moveTo(tailX, -4);
+      ctx.lineTo(tailX - rand(6, 14), 0);
+      ctx.lineTo(tailX,  4);
       ctx.strokeStyle = this.speedBoost > 0
         ? 'rgba(255, 212, 0, 0.9)'
-        : 'rgba(255, 130, 0, 0.85)';
+        : skin.flame;
       ctx.stroke();
     }
 
@@ -434,6 +491,9 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  // Ciclar skin en cualquier estado (jugando, muerto o gameover)
+  if (pressed('KeyV')) cycleSkin();
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
@@ -516,7 +576,7 @@ function drawLifeIcon(x, y) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = currentSkin().color;
   ctx.lineWidth   = 1.2;
   ctx.lineJoin    = 'round';
   ctx.beginPath();
@@ -548,6 +608,11 @@ function drawHUD() {
     ctx.font         = 'bold 15px monospace';
     ctx.fillText(`VELOCIDAD ${ship.speedBoost.toFixed(1)}s`, 14, H - 16);
   }
+
+  ctx.textAlign  = 'right';
+  ctx.fillStyle  = 'rgba(255,255,255,0.5)';
+  ctx.font       = '13px monospace';
+  ctx.fillText(`SKIN ${SKINS[skinIndex].name}  [V]`, W - 14, H - 16);
 }
 
 function drawOverlay(title, sub) {
@@ -587,5 +652,6 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
+loadSkin();
 initGame();
 requestAnimationFrame(loop);
