@@ -68,20 +68,33 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
+// Estrella fugaz: asteroide pequeño y veloz que se esfuma con el tiempo
+const SHOOTING_CHANCE = 0.15; // probabilidad al generar el nivel
+const SHOOTING_SPEED  = 200;  // px/s (bala: 520, asteroide normal: máx ~85)
+const SHOOTING_TTL    = 8;    // segundos antes de desaparecer sola
+const SHOOTING_POINTS = 200;  // puntos fijos al destruirla
+
 class Asteroid {
-  constructor(x, y, size = 3) {
+  constructor(x, y, size = 3, type = 'normal') {
+    this.type = type;
+    this.dead = false;
+
+    // La estrella fugaz siempre es pequeña, sin importar el tamaño pedido
+    if (type === 'shooting') size = 1;
+
     this.x    = x;
     this.y    = y;
     this.size = size;
     this.radius = RADII[size];
-    this.dead = false;
 
     const angle = rand(0, Math.PI * 2);
-    const speed = SPEEDS[size] + rand(-15, 15);
+    const speed = type === 'shooting' ? SHOOTING_SPEED : SPEEDS[size] + rand(-15, 15);
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.rotSpeed = rand(-1.2, 1.2);
     this.rot = rand(0, Math.PI * 2);
+    this.ttl = type === 'shooting' ? SHOOTING_TTL : Infinity;
+    this.emitTimer = 0;
 
     // Polígono irregular
     const n = randInt(8, 13);
@@ -97,10 +110,42 @@ class Asteroid {
     this.x   = wrap(this.x + this.vx * dt, W);
     this.y   = wrap(this.y + this.vy * dt, H);
     this.rot += this.rotSpeed * dt;
+    this.ttl -= dt;
+    if (this.ttl <= 0) this.dead = true;
+    if (this.type === 'shooting') this.emitTrail(dt);
+  }
+
+  // Estela de fuego: acumulador para que la densidad no dependa del framerate
+  emitTrail(dt) {
+    this.emitTimer -= dt;
+    while (this.emitTimer <= 0) {
+      this.emitTimer += 0.025;
+      // Deriva hacia atrás del movimiento + dispersión
+      const vx = -this.vx * rand(0.1, 0.3) + rand(-25, 25);
+      const vy = -this.vy * rand(0.1, 0.3) + rand(-25, 25);
+      particles.push(new Particle(this.x, this.y, {
+        color: fireColor(),
+        life: rand(0.2, 0.5),
+        vx, vy,
+      }));
+
+      // Chispa ocasional, casi perpendicular al movimiento
+      if (Math.random() < 0.08) {
+        const side = Math.random() < 0.5 ? 1 : -1;
+        const s = side * rand(60, 120);
+        particles.push(new Particle(this.x, this.y, {
+          color: '255,200,120',
+          life: rand(0.1, 0.25),
+          vx: (-this.vy / SHOOTING_SPEED) * s,
+          vy: ( this.vx / SHOOTING_SPEED) * s,
+        }));
+      }
+    }
   }
 
   split() {
-    if (this.size <= 1) return [];
+    // La estrella fugaz se esfuma, no deja fragmentos
+    if (this.type === 'shooting' || this.size <= 1) return [];
     return [
       new Asteroid(this.x, this.y, this.size - 1),
       new Asteroid(this.x, this.y, this.size - 1),
@@ -108,10 +153,30 @@ class Asteroid {
   }
 
   draw() {
+    if (this.type === 'shooting') {
+      // Parpadeo justo antes de esfumarse
+      if (this.ttl < 1 && Math.floor(this.ttl * 8) % 2 === 0) return;
+
+      // Núcleo brillante: tres halos superpuestos con leve destello
+      const flicker = 1 + rand(-0.1, 0.1);
+      const halos = [
+        [10,  'rgba(255, 150, 50, 0.12)'],
+        [6.5, 'rgba(255, 190, 80, 0.30)'],
+        [4,   'rgba(255, 240, 210, 0.70)'],
+      ];
+      for (const [r, fill] of halos) {
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r * flicker, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#fff';
+    // Naranja tenue en la fugaz: deja visible el hitbox real de 16 px
+    ctx.strokeStyle = this.type === 'shooting' ? 'rgba(255, 120, 60, 0.5)' : '#fff';
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
     ctx.beginPath();
@@ -213,18 +278,26 @@ class Ship {
   }
 }
 
-// ── Partículas (explosión) ────────────────────────────────────────────────────
+// ── Partículas (explosiones y estelas) ────────────────────────────────────────
+// Las opciones son para las estelas/explosiones de fuego; sin ellas el
+// comportamiento es el original (explosión blanca de asteroide).
 class Particle {
-  constructor(x, y) {
+  constructor(x, y, { color, life, speed, vx, vy } = {}) {
     this.x  = x;
     this.y  = y;
-    const angle = rand(0, Math.PI * 2);
-    const speed = rand(30, 130);
-    this.vx   = Math.cos(angle) * speed;
-    this.vy   = Math.sin(angle) * speed;
-    this.life = rand(0.4, 1.1);
+    if (vx === undefined) {
+      const angle = rand(0, Math.PI * 2);
+      const v     = speed ?? rand(30, 130);
+      vx = Math.cos(angle) * v;
+      vy = Math.sin(angle) * v;
+    }
+    this.vx   = vx;
+    this.vy   = vy;
+    this.life = life ?? rand(0.4, 1.1);
     this.ttl  = this.life;
     this.dead = false;
+    // Componentes RGB ('255,130,0'); undefined = blanco original
+    this.color = color;
   }
 
   update(dt) {
@@ -236,7 +309,7 @@ class Particle {
 
   draw() {
     const alpha = this.ttl / this.life;
-    ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+    ctx.strokeStyle = `rgba(${this.color ?? '255,255,255'},${alpha.toFixed(2)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(this.x, this.y);
@@ -289,13 +362,17 @@ let deadTimer;
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
+  // Desde el nivel 2 se garantiza al menos una estrella fugaz por nivel
+  const guaranteed = level >= 2;
   for (let i = 0; i < count; i++) {
     let x, y;
     do {
       x = rand(0, W);
       y = rand(0, H);
     } while (Math.hypot(x - W / 2, y - H / 2) < SAFE_DIST);
-    asteroids.push(new Asteroid(x, y, 3));
+    const type = (guaranteed && i === 0) || Math.random() < SHOOTING_CHANCE
+      ? 'shooting' : 'normal';
+    asteroids.push(new Asteroid(x, y, 3, type));
   }
 }
 
@@ -323,6 +400,24 @@ function nextLevel() {
 
 function explode(x, y, count = 8) {
   for (let i = 0; i < count; i++) particles.push(new Particle(x, y));
+}
+
+// Componentes RGB de la paleta fuego, con pesos 30/45/25
+function fireColor() {
+  const roll = rand(0, 100);
+  if (roll < 30) return '255,242,214'; // blanco-amarillo
+  if (roll < 75) return '255,150,50';  // naranja
+  return '255,70,40';                  // rojo
+}
+
+// Explosión de fuego: más partículas y más rápidas, para la estrella fugaz
+function explodeFire(x, y, count = 14) {
+  for (let i = 0; i < count; i++)
+    particles.push(new Particle(x, y, {
+      color: fireColor(),
+      life: rand(0.25, 0.7),
+      speed: rand(60, 190),
+    }));
 }
 
 function killShip() {
@@ -385,8 +480,9 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
+        score += a.type === 'shooting' ? SHOOTING_POINTS : POINTS[a.size];
+        if (a.type === 'shooting') explodeFire(a.x, a.y, 16);
+        else explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
         if (Math.random() < POWERUP_DROP_CHANCE)
           powerups.push(new PowerUp(a.x, a.y));
@@ -400,6 +496,11 @@ function update(dt) {
   if (ship.invincible <= 0) {
     for (const a of asteroids) {
       if (dist(ship, a) < ship.radius + a.radius * 0.82) {
+        // La estrella fugaz también se destruye en el impacto
+        if (a.type === 'shooting') {
+          a.dead = true;
+          explodeFire(a.x, a.y, 12);
+        }
         killShip();
         break;
       }
