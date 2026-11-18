@@ -24,11 +24,23 @@ Luego visita `http://localhost:3000`.
 
 ## Controles
 
-| Tecla     | Acción     |
-| --------- | ---------- |
-| `←` `→`   | Rotar nave |
-| `↑`       | Propulsar  |
-| `Espacio` | Disparar   |
+| Tecla     | Acción                          |
+| --------- | ------------------------------- |
+| `←` `→`   | Rotar nave / elegir nave        |
+| `1` `2`   | Elegir nave en la pantalla inicial |
+| `↑`       | Propulsar                       |
+| `Espacio` | Disparar / empezar              |
+
+## Naves
+
+En la pantalla inicial puedes elegir entre dos naves:
+
+| Nave    | Color   | Tamaño | Puntos |
+| ------- | ------- | ------ | ------ |
+| Clásica | Blanco  | 1×     | 1×     |
+| Morada  | Morado  | 2×     | 2×     |
+
+La nave morada es el doble de grande (y por tanto más fácil de impactar), pero duplica los puntos obtenidos al destruir asteroides.
 
 ## Puntuación
 
