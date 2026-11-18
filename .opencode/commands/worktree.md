@@ -4,7 +4,7 @@ description: Crear un worktree de git en .worktrees/
 
 Analiza el siguiente argumento y deriva de él un nombre válido para el worktree:
 en minúsculas, reemplaza espacios y guiones bajos por guiones, elimina
-caracteres especiales.
+caracteres especiales. 
 
 $ARGUMENTS
 
@@ -17,4 +17,6 @@ derivado:
 git worktree add .worktrees/<name>
 
 No hagas nada más: no cambies de directorio, no hagas cd al worktree,
-no ejecutes ningún comando adicional.
+no ejecutes ningún comando adicional. Reporta unicamente el resultado del comando (stdout/stderr y código de salida).
+Si el argumento es muy largo, simplifícalo a un nombre significativo.
+
